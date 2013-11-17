@@ -1,0 +1,6 @@
+%% -*- mode: erlang -*-
+%% vi: set ft=erlang :
+
+{application, riak_counter,
+ [{description, "Riak Counter"},
+  {vsn, "0.1.0"}]}.
