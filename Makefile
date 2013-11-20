@@ -1,5 +1,7 @@
 .PHONY: all compile get-deps test clean
 
+N := 100
+
 all: compile get-deps
 
 compile:
@@ -12,7 +14,7 @@ test: compile
 	@ rebar skip_deps=true eunit
 	@ erl -pa .eunit deps/*/ebin -noshell \
 	  -eval "proper:quickcheck(\
-                 proper:numtests(100, \
+                 proper:numtests($(N), \
                      riak_counter_proper:prop_counter())), \
 	         init:stop()."
 
