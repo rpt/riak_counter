@@ -1,0 +1,6 @@
+language: erlang
+otp_release:
+  - R16B
+services:
+  - riak
+script: make test
