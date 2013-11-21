@@ -24,7 +24,8 @@
 %% Property -------------------------------------------------------------------
 
 prop_counter() ->
-    {ok, _} = riak_counter:start(),
+    {ok, Pid} = riak_counter:start_link(5),
+    unlink(Pid),
     ?FORALL(Commands, ?commands(),
             begin
                 riak_counter:delete(?COUNTER),

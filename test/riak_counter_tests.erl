@@ -11,7 +11,8 @@ counter_test_() ->
      [fun delete_bug/0]}.
 
 setup() ->
-    {ok, Pid} = riak_counter:start(),
+    {ok, Pid} = riak_counter:start_link(5),
+    unlink(Pid),
     Pid.
 
 teardown(Pid) ->

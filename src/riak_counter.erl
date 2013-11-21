@@ -1,9 +1,7 @@
 -module(riak_counter).
 -behaviour(gen_server).
 
-%% API
--export([start/0,
-         start_link/0]).
+-export([start_link/1]).
 -export([update/1,
          read/1,
          reset/1,
@@ -18,7 +16,8 @@
          code_change/3]).
 
 -record(state, {
-          pid :: pid()
+          pool = [] :: [pid()],
+          all :: [pid()]
          }).
 
 -define(BUCKET, <<"counters">>).
@@ -26,13 +25,9 @@
 
 %% API functions ---------------------------------------------------------------
 
--spec start() -> {ok, pid()} | ignore | {error, term()}.
-start() ->
-    gen_server:start({local, ?MODULE}, ?MODULE, [], []).
-
--spec start_link() -> {ok, pid()} | ignore | {error, term()}.
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+-spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
+start_link(N) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, N, []).
 
 -spec update(atom()) -> ok | {error, term()}.
 update(CounterName) ->
@@ -52,26 +47,26 @@ delete(CounterName) ->
 
 %% gen_server callbacks --------------------------------------------------------
 
-init([]) ->
-    Host = application:get_env(riak_counter, host, "127.0.0.1"),
-    Port = application:get_env(riak_counter, port, 8087),
-    {ok, Pid} = riakc_pb_socket:start_link(Host, Port),
-    pong = riakc_pb_socket:ping(Pid),
-    ok = riakc_pb_socket:set_bucket(Pid, ?BUCKET, [{allow_mult, true}]),
-    {ok, #state{pid = Pid}}.
+init(N) ->
+    Pool = [connect() || _ <- lists:seq(1, N)],
+    {ok, #state{all = Pool}}.
 
-handle_call({update, Name}, _From, #state{pid = Pid} = State) ->
+handle_call({update, Name}, _From, State) ->
+    {Pid, State2} = get_pid(State),
     Reply = update_in_riak(Name, Pid),
-    {reply, Reply, State};
-handle_call({read, Name}, _From, #state{pid = Pid} = State) ->
+    {reply, Reply, State2};
+handle_call({read, Name}, _From, State) ->
+    {Pid, State2} = get_pid(State),
     Reply = read_from_riak(Name, Pid),
-    {reply, Reply, State};
-handle_call({reset, Name}, _From, #state{pid = Pid} = State) ->
+    {reply, Reply, State2};
+handle_call({reset, Name}, _From, State) ->
+    {Pid, State2} = get_pid(State),
     Reply = reset_in_riak(Name, Pid),
-    {reply, Reply, State};
-handle_call({delete, Name}, _From, #state{pid = Pid} = State) ->
+    {reply, Reply, State2};
+handle_call({delete, Name}, _From, State) ->
+    {Pid, State2} = get_pid(State),
     Reply = delete_from_riak(Name, Pid),
-    {reply, Reply, State};
+    {reply, Reply, State2};
 handle_call(_Request, _From, State) ->
     {stop, bad_call, State}.
 
@@ -88,6 +83,21 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% Internal functions ---------------------------------------------------------
+
+-spec connect() -> pid().
+connect() ->
+    Host = application:get_env(riak_counter, host, "127.0.0.1"),
+    Port = application:get_env(riak_counter, port, 8087),
+    {ok, Pid} = riakc_pb_socket:start_link(Host, Port),
+    pong = riakc_pb_socket:ping(Pid),
+    ok = riakc_pb_socket:set_bucket(Pid, ?BUCKET, [{allow_mult, true}]),
+    Pid.
+
+-spec get_pid(#state{}) -> {pid(), #state{}}.
+get_pid(#state{pool = [], all = [Pid | Pool]} = State) ->
+    {Pid, State#state{pool = Pool}};
+get_pid(#state{pool = [Pid | Pool]} = State) ->
+    {Pid, State#state{pool = Pool}}.
 
 -spec update_in_riak(atom(), pid()) -> ok | {error, term()}.
 update_in_riak(Name, Pid) ->
