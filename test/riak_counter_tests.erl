@@ -12,13 +12,11 @@ counter_test_() ->
       fun delete_bug/0]}.
 
 setup() ->
-    {ok, Pid} = riak_counter:start_link(5),
-    unlink(Pid),
-    Pid.
+    ok = application:start(riak_counter).
 
-teardown(Pid) ->
-    riak_counter:delete(?COUNTER),
-    exit(Pid, kill).
+teardown(_) ->
+    ok = riak_counter:delete(?COUNTER),
+    ok = application:stop(riak_counter).
 
 %% Tests ----------------------------------------------------------------------
 

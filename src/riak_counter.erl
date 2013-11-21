@@ -1,11 +1,15 @@
 -module(riak_counter).
+-behaviour(application).
 -behaviour(gen_server).
 
--export([start_link/1]).
 -export([update/1,
          read/1,
          reset/1,
          delete/1]).
+
+%% application callbacks
+-export([start/2,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,10 +29,6 @@
 
 %% API functions ---------------------------------------------------------------
 
--spec start_link(integer()) -> {ok, pid()} | ignore | {error, term()}.
-start_link(N) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, N, []).
-
 -spec update(atom()) -> ok | {error, term()}.
 update(CounterName) ->
     gen_server:call(?MODULE, {update, CounterName}).
@@ -45,10 +45,21 @@ reset(CounterName) ->
 delete(CounterName) ->
     gen_server:call(?MODULE, {delete, CounterName}).
 
+%% application callbacks -------------------------------------------------------
+
+start(_Type, _Args) ->
+    {ok, Pid} = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []),
+    {ok, Pid, Pid}.
+
+stop(Pid) ->
+    exit(Pid, normal).
+
 %% gen_server callbacks --------------------------------------------------------
 
-init(N) ->
-    Pool = [connect() || _ <- lists:seq(1, N)],
+init([]) ->
+    {ok, Hosts} = application:get_env(riak_counter, hosts),
+    {ok, Port} = application:get_env(riak_counter, port),
+    Pool = [connect(Host, Port) || Host <- Hosts],
     {ok, #state{all = Pool}}.
 
 handle_call({update, Name}, _From, State) ->
@@ -84,10 +95,8 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% Internal functions ---------------------------------------------------------
 
--spec connect() -> pid().
-connect() ->
-    Host = application:get_env(riak_counter, host, "127.0.0.1"),
-    Port = application:get_env(riak_counter, port, 8087),
+-spec connect(string(), integer()) -> pid().
+connect(Host, Port) ->
     {ok, Pid} = riakc_pb_socket:start_link(Host, Port),
     pong = riakc_pb_socket:ping(Pid),
     ok = riakc_pb_socket:set_bucket(Pid, ?BUCKET, [{allow_mult, true}]),
